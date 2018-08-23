@@ -3,7 +3,7 @@ require '../vendor/autoload.php';
 
 /**
  * Created by PhpStorm.
- * User: yidao
+ * User: DaoYoung
  * Date: 2018/1/3
  * Time: 15:13
  */
@@ -18,40 +18,15 @@ class ElasticDriver
      * [index, type, from, size]
      * [body] => [$param_multi_match, $param_filters]
      * [sort] => $param_sort
-     * [collapse] => $param_collapse
+     * [collapse] => $param_collapse //todo
      */
     protected $params;
-    /**
-     * 多匹配查询参数
-     * [query, fields]
-     */
     protected $param_multi_match = [];
-    /**
-     * 不匹配查询参数
-     * [query, fields]
-     */
     protected $param_not_match;
-    /**
-     * 过滤参数
-     * [bool][must|should|must_not]
-     */
     protected $param_filters;
-    /**
-     * 排序参数
-     */
     protected $param_sort;
-    /**
-     * 折叠参数
-     */
     protected $param_collapse;
-    /**
-     * 高亮参数
-     */
     protected $param_highlight;
-    /**
-     * 应对cpm在不同页面对同表的不同展示字段
-     */
-    protected $format_fields;
 
     const INDEX_MAP = [
         "students" => "es_php",
@@ -68,10 +43,9 @@ class ElasticDriver
             $this->config['host']
         )->build();
         spl_autoload_register(function ($class) {
-            include  $class . '.class.php';
+            require_once  $class . '.class.php';
         });
     }
-
     /**
      * @return Elasticsearch\Client
      */
@@ -79,7 +53,6 @@ class ElasticDriver
     {
         return $this->connect;
     }
-
     /**
      * 设置索引index\type
      */
@@ -102,15 +75,18 @@ class ElasticDriver
             case "students":
                 $this->index_helper = new ElasticIndexStudent();
                 break;
+            case "teachers":
+                $this->index_helper = new ElasticIndexTeacher();
+                break;
             default:
-                throw new Exception('NO_ElasticIndex_Helper');
+                throw new Exception('NO_ElasticIndex_Helper:'.$type_name);
         }
     }
 
     /**
      * 设置过滤
      * @param array $where
-     * @return self
+     * @return static
      */
     public function setFilter($where)
     {
@@ -143,7 +119,7 @@ class ElasticDriver
      */
     private function setDefaultFilter()
     {
-        $filters = $this->index_helper->getDefaultFilter();
+        $filters = $this->index_helper->getFilterDefault();
         foreach ($filters as $key => $filter) {
             list($operator, $symbol, $value) = $filter;
             $this->param_filters[$symbol][][$operator] = [$key => $value];
@@ -152,15 +128,17 @@ class ElasticDriver
     /**
      * 设置查询关键字
      * @param string $query_string
+     * @return static
      */
     public function setQuery($query_string, $is_highlight=false)
     {
         if (!empty($query_string)) {
+            $boost = $this->index_helper ? $this->index_helper->setBoost() : [];
             $this->param_multi_match = [
                 'tie_breaker' => '0.3',
                 'minimum_should_match' => '80%',
                 'query' => $query_string,
-                'fields' => array_merge($this->config['match_field'], $this->index_helper->getBoost())
+                'fields' => array_merge($this->config['match_field'], $boost)
             ];
         }
         if (isset($this->config['not_match_word'])) {
@@ -175,27 +153,24 @@ class ElasticDriver
     }
     /**
      * 设置排序
-     * @param array $sort_array
+     * @param string $str
+     * @return static
      */
-    public function setSort($sort_array)
+    public function setSort($str)
     {
-        foreach ($sort_array as $sort_type) {
-            $sort = $this->index_helper->getSortParams($sort_type);
-            if ($sort) $this->param_sort[] = $sort;
+        if(empty(trim($str))) return $this;
+        $arr = explode(',', $str);
+        foreach ($arr as $item){
+            if(empty($item)) continue;
+            $item = explode(" ", $item);
+            if($item[0] == "func"){
+                $this->param_sort[] = $this->index_helper->getSortParamsByFunc($item[1]);
+            }else{
+                if(empty($item[1])) $item[1] = "desc";
+                $this->param_sort[][$item[0]] = $item[1];
+            }
         }
         return $this;
-    }
-
-    private function makeupParams()
-    {
-        $params = [];
-        if ($this->param_multi_match) $params['query']['bool']['must']['multi_match'] = $this->param_multi_match;
-        if ($this->param_not_match) $params['query']['bool']['must_not']['multi_match'] = $this->param_not_match;
-        if ($this->param_sort) $params['sort'] = $this->param_sort;
-        if ($this->param_collapse) $params['collapse'] = $this->param_collapse;
-        if ($this->param_highlight) $params['highlight'] = $this->param_highlight;
-        if ($this->param_filters) $params['query']['bool']['filter']['bool'] = $this->param_filters;
-        $this->params['body'] = $params;
     }
     /**
      * 获取结果列表
@@ -220,87 +195,62 @@ class ElasticDriver
             }
             return $list;
         } catch (Exception $e) {
-            throw new ElasticException($this->connect, 'search error', $e->getMessage());
+            throw new ElasticException($this->connect, 'getResultList error', $e->getMessage());
         }
+    }
+    private function makeupParams()
+    {
+        $params = [];
+        if ($this->param_multi_match) $params['query']['bool']['must']['multi_match'] = $this->param_multi_match;
+        if ($this->param_not_match) $params['query']['bool']['must_not']['multi_match'] = $this->param_not_match;
+        if ($this->param_sort) $params['sort'] = $this->param_sort;
+        if ($this->param_collapse) $params['collapse'] = $this->param_collapse;
+        if ($this->param_highlight) $params['highlight'] = $this->param_highlight;
+        if ($this->param_filters) $params['query']['bool']['filter']['bool'] = $this->param_filters;
+        $this->params['body'] = $params;
     }
     /**
      * 聚合数据
-     */
-    public function getTips()
-    {
-        $this->makeupParams();
-        $params['index'] = $this->config['test_agg_index'];
-//        $params['body']['aggs'] = $this->getAggFilter();
-        $data = $this->connect->search($params);
-        return $data;
-    }
-
-    /**
-     * 返回聚合必要过滤条件
-     * @return mixed
-     */
-    private function getAggFilter()
-    {
-        foreach (self::ES_INDEX_MAP as $type_name => $index_name) {
-            if ($type_name == SearchClient::TYPE_CPM_PLAN || $type_name == SearchClient::TYPE_CPM_PLAN_KEYWORD)
-                continue;
-            $this->setIndexHelper($type_name);
-            $filters = $this->index_helper->getDefaultFilter();
-            $param_filters = [];
-            $sync_index = C('IS_REL') ? substr($index_name, 1) : $index_name;
-            $param_filters['bool']['must'][]['term'] = ['_index' => $sync_index];
-            foreach ($filters as $key => $filter) {
-                $param_filters['bool'][$filter[1]][][$filter[0]] = [$key => $filter[2]];
-            }
-            $param['filter_type']['filter']['bool']['should'][] = $param_filters;
-        }
-        $param['filter_type']['aggs']['count_type']['terms']['field'] = $this->config['agg_field'];
-        $param['filter_type']['aggs']['count_type']['aggs']['commodity_type']['terms']['field'] = $this->config['agg_set_meal_field'];
-
-        return $param;
-    }
-
-    public function setFormatFields($format_fields)
-    {
-        $this->format_fields = $format_fields;
-    }
-
-    /**
-     * 格式化列表分页数据
-     * @param array $list
+     * @throws Exception
+     * @param array $where
      * @return array
      */
-    protected function formatListData($list)
+    public function getTips($where=[])
     {
-        $data = [
-            'page_count' => ceil($list['hits']['total'] / CommDef::$PageSize),
-            'list' => $this->index_helper->makeUpListData($list['hits']['hits'], $this->format_fields, $this->connect, $this->cpm_count, $this->param_extend_fields, $this->is_flow_search),
-        ];
-        $es_hit_total = $list['hits']['total'] ?: 0; //es命中总数
-        $es_hit_count = count($list['hits']['hits']); //es命中数
-        $actual_count = count($data['list']); //程序处理后实际返回数
-        $actual_total = $es_hit_total - ($es_hit_count - $actual_count); // 实际返回总数
-        $data['total'] = $data['total_count'] = $actual_total > 0 ? $actual_total : 0;//追加total_count，统一服务端api
-        return $data;
+        try {
+            $params = $this->makeupAggParams($where);
+            if (isset($_GET['debug']) && $_GET['debug'] == 'dump') {
+                exit(json_encode($params));
+            }
+            $data = $this->connect->search($params);
+            return $data;
+        } catch (Exception $e) {
+            throw new ElasticException($this->connect, 'getTips error', $e->getMessage());
+        }
     }
-
-
-    public function writeLog($type)
+    /**
+     * 聚合过滤
+     * @throws Exception
+     * @param array $where
+     * @return array
+     */
+    private function makeupAggParams($where=[])
     {
-        $headers = Utils::get_http_headers();
-        $params['type'] = $params['index'] = C('IS_REL') ? $this->config['log_index'] : $this->config['test_log_index'];
-        $req = $_GET;
-        unset($req['_URL_']);
-        if (count($req) > 100) return;//防止过大
-        $params['body'] = [
-            'type' => $type,
-            'request' => $req,
-            'header' => $headers,
-            'created_at' => date("Y-m-d") . "T" . date("H:i:s") . "+08:00",
-        ];
-        log_write("writeLog " . json_encode($params));
-        $this->connect->index($params);
+        $agg_params = $filters = [];
+        $agg_params['index'] = $this->config['agg_index'];
+        $agg_params['size'] = 0;
+        if ($this->param_multi_match) $agg_params['body']['query']['bool']['must']['multi_match'] = $this->param_multi_match;
+        if ($this->param_not_match) $agg_params['body']['query']['bool']['must_not']['multi_match'] = $this->param_not_match;
+        if ($this->param_highlight) $agg_params['body']['highlight'] = $this->param_highlight;
+        foreach (self::INDEX_MAP as $type_name => $index_name) {
+            $this->param_filters = [];
+            $this->setIndexHelper($type_name);
+            $this->setFilter($where)->setDefaultFilter();
+            $this->param_filters['must'][]['term'] = ['_index' => $index_name];
+            $this->param_filters['must'][]['term'] = ['_type' => $type_name];
+            $filters[$type_name.'_count']['filter']['bool'] = $this->param_filters;
+        }
+        $agg_params['body']['aggs'] = $filters;
+        return $agg_params;
     }
-
-
 }

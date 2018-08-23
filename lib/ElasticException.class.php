@@ -2,7 +2,7 @@
 
 /**
  * Created by PhpStorm.
- * User: yidao
+ * User: DaoYoung
  * Date: 2018/1/31
  * Time: 11:46
  */
@@ -16,11 +16,10 @@ class ElasticException extends Exception
         $params['body'] = [
             'type' => $error_type,
             'content' => $message,
-//            'server' => $_SERVER,
-//            'request' => $_REQUEST,
+            'request' => json_encode($_REQUEST),
             'created_at' => date("Y-m-d") . "T". date("H:i:s") ."+08:00",
         ];
-        print_r($params);exit;
+//        $connect->index($params);
         return parent::__construct($message, $code, $previous);
     }
 }

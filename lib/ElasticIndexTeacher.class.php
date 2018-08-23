@@ -1,5 +1,4 @@
 <?php
-require "ElasticIndex.class.php";
 /**
  * 商家
  * Created by PhpStorm.
@@ -17,8 +16,7 @@ class ElasticIndexTeacher extends ElasticIndex
     public function getFilterMap()
     {
         return [
-            'age' => ['term', 'must'],
-            'age_range' => ['range', 'must'],
+            'match_major' => ['term', 'must'],
         ];
     }
 
@@ -31,12 +29,7 @@ class ElasticIndexTeacher extends ElasticIndex
 
     public function getBoost()
     {
-        return ["match_name^10", "match_sport^2"];
+        return ["match_name^2", "match_major^2"];
     }
 
-    public function getSortAge()
-    {
-        $param['age']['order'] = 'desc';
-        return $param;
-    }
 }

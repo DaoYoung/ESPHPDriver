@@ -1,5 +1,4 @@
 <?php
-
 /**
  * Created by PhpStorm.
  * User: DaoYoung
@@ -34,9 +33,9 @@ class ElasticIndexStudent extends ElasticIndex
         return ["match_name^10", "match_sport^2"];
     }
 
-    public function getSortAge()
+    public function getSortYoung()
     {
-        $param['age']['order'] = 'desc';
+        $param['age']['order'] = 'asc';
         return $param;
     }
 

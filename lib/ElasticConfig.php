@@ -8,6 +8,6 @@
 return [
     'host' => ['search.hunliji.com'],
     'match_field' => ['match_*'],
-    'test_agg_index' => 'es_php',
-    'log_index' => 'wedding_log',
+    'agg_index' => 'es_php',
+    'log_index' => 'es_log',
 ];
