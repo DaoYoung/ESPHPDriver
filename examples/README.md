@@ -17,4 +17,4 @@ At first, you need create some data in Elastic Search. You should make right par
 ### Aggregation
 example: find how many student/teacher like dance, `tip.php?keyword=dance`
 
-
+>  Not smooth, just visit index.php
